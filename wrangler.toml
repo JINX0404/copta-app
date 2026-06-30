@@ -1,0 +1,20 @@
+name = "copta-app"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+account_id = "b66648a661c33335bd68bf84639421a0"
+
+[vars]
+POC_MODE = "true"
+DEV_EXPOSE_MAGIC_LINK = "true"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "copta-db"
+database_id = "1d56f7d2-82de-4665-abe0-5951d4d6fe59"
+
+[[r2_buckets]]
+binding = "ATTACHMENTS"
+bucket_name = "copta-attachments"
+
+# 国内データレジデンシ要件が確定したら Jurisdictional Restrictions / Regional Services を設定すること
+# 参考: docs/ARCHITECTURE.md「国内residency」
