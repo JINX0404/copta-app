@@ -106,10 +106,14 @@ VALUES
   ('msg-demo-002', 'chat-demo-001', 'role-president', '了解です。会場予約の状況も併せてお願いします。');
 
 -- ダミー請求
-INSERT OR REPLACE INTO payment_requests (id, organization_id, user_id, child_id, title, amount_yen, category, status, created_by_role_id, due_at)
+INSERT OR REPLACE INTO payment_requests (id, organization_id, user_id, child_id, title, amount_yen, category, status, payment_method, payment_provider_ref, paid_at, created_by_role_id, due_at)
 VALUES
-  ('pay-demo-001', 'org-demo-001', 'user-demo-parent', 'child-demo-001', 'PTA会費（2026年度）', 5000, '会費', 'pending', 'role-president', datetime('now', '+30 days')),
-  ('pay-demo-002', 'org-demo-001', 'user-demo-president', 'child-demo-001', 'PTA会費（2026年度）', 5000, '会費', 'paid', 'role-president', datetime('now', '+30 days'));
+  ('pay-demo-001', 'org-demo-001', 'user-demo-parent', 'child-demo-001', 'PTA会費（2026年度）', 5000, '会費', 'pending', NULL, NULL, NULL, 'role-president', datetime('now', '+30 days')),
+  ('pay-demo-002', 'org-demo-001', 'user-demo-president', 'child-demo-001', 'PTA会費（2026年度）', 5000, '会費', 'paid', 'apple_pay', 'APL-DEMO-SEED001', datetime('now', '-3 days'), 'role-president', datetime('now', '+30 days')),
+  ('pay-demo-003', 'org-demo-001', 'user-demo-parent', 'child-demo-001', '運動会Tシャツ代', 1500, 'イベント費', 'pending', NULL, NULL, NULL, 'role-koho', datetime('now', '+14 days')),
+  ('pay-demo-004', 'org-demo-001', 'user-demo-koho', 'child-demo-001', '教材費（4年）', 800, '教材費', 'paid', 'paypay', 'PPY-DEMO-SEED002', datetime('now', '-1 days'), 'role-president', datetime('now', '+30 days'));
 
-INSERT OR IGNORE INTO ledger_entries (id, organization_id, entry_type, category, amount_yen, related_user_id, payment_provider_ref)
-VALUES ('ledger-demo-001', 'org-demo-001', 'income', '会費', 5000, 'user-demo-president', 'DEMO-SEED-001');
+INSERT OR IGNORE INTO ledger_entries (id, organization_id, entry_type, category, amount_yen, related_user_id, payment_provider_ref, payment_method)
+VALUES
+  ('ledger-demo-001', 'org-demo-001', 'income', '会費', 5000, 'user-demo-president', 'APL-DEMO-SEED001', 'apple_pay'),
+  ('ledger-demo-002', 'org-demo-001', 'income', '教材費', 800, 'user-demo-koho', 'PPY-DEMO-SEED002', 'paypay');

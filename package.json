@@ -5,8 +5,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "db:migrate:local": "wrangler d1 execute copta-db --local --file=./migrations/0001_init.sql && wrangler d1 execute copta-db --local --file=./migrations/0002_auth_sessions.sql && wrangler d1 execute copta-db --local --file=./migrations/0003_officer_chat.sql && wrangler d1 execute copta-db --local --file=./migrations/0004_payment_requests.sql",
-    "db:migrate:remote": "wrangler d1 execute copta-db --remote --file=./migrations/0001_init.sql && wrangler d1 execute copta-db --remote --file=./migrations/0002_auth_sessions.sql && wrangler d1 execute copta-db --remote --file=./migrations/0003_officer_chat.sql && wrangler d1 execute copta-db --remote --file=./migrations/0004_payment_requests.sql",
+    "db:migrate:local": "wrangler d1 execute copta-db --local --file=./migrations/0001_init.sql && wrangler d1 execute copta-db --local --file=./migrations/0002_auth_sessions.sql && wrangler d1 execute copta-db --local --file=./migrations/0003_officer_chat.sql && wrangler d1 execute copta-db --local --file=./migrations/0004_payment_requests.sql && wrangler d1 execute copta-db --local --file=./migrations/0005_payment_method.sql",
+    "db:migrate:remote": "wrangler d1 execute copta-db --remote --file=./migrations/0001_init.sql && wrangler d1 execute copta-db --remote --file=./migrations/0002_auth_sessions.sql && wrangler d1 execute copta-db --remote --file=./migrations/0003_officer_chat.sql && wrangler d1 execute copta-db --remote --file=./migrations/0004_payment_requests.sql && wrangler d1 execute copta-db --remote --file=./migrations/0005_payment_method.sql",
     "db:seed:local": "wrangler d1 execute copta-db --local --file=./migrations/seed_dev.sql",
     "db:seed:poc": "wrangler d1 execute copta-db --local --file=./migrations/seed_poc.sql",
     "db:setup:local": "npm run db:migrate:local && npm run db:seed:poc",

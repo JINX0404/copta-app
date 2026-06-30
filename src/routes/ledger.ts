@@ -168,21 +168,28 @@ ledger.post('/payments/:id/pay-demo', async (c) => {
   }
   if (req.status === 'paid') return c.json({ error: 'already_paid' }, 400)
 
+  let method = 'credit_card'
+  try {
+    const body = await c.req.json<{ payment_method?: string }>()
+    if (body.payment_method) method = body.payment_method
+  } catch {
+    /* no body */
+  }
+
   const providerRef = `DEMO-${newId().slice(0, 8)}`
 
   await c.env.DB.prepare(
-    `UPDATE payment_requests SET status = 'paid', payment_provider_ref = ? WHERE id = ?`,
+    `UPDATE payment_requests SET status = 'paid', payment_provider_ref = ?, payment_method = ?, paid_at = datetime('now') WHERE id = ?`,
   )
-    .bind(providerRef, id)
+    .bind(providerRef, method, id)
     .run()
 
-  // 台帳記録: 受取人は Organization 固定
   await c.env.DB.prepare(
     `INSERT INTO ledger_entries
-       (id, organization_id, entry_type, category, amount_yen, related_user_id, payment_provider_ref)
-     VALUES (?, ?, 'income', ?, ?, ?, ?)`,
+       (id, organization_id, entry_type, category, amount_yen, related_user_id, payment_provider_ref, payment_method)
+     VALUES (?, ?, 'income', ?, ?, ?, ?, ?)`,
   )
-    .bind(newId(), orgId, req.category, req.amount_yen, req.user_id, providerRef)
+    .bind(newId(), orgId, req.category, req.amount_yen, req.user_id, providerRef, method)
     .run()
 
   return c.json({ ok: true, payment_provider_ref: providerRef, message: 'demo_payment_completed' })

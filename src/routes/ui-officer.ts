@@ -3,6 +3,7 @@ import type { AppEnv } from '../types/env'
 import { newId } from '../lib/id'
 import { currentSchoolYear } from '../lib/school-year'
 import { requireUiUser, getRole, header, page, esc, POC_ORG_ID } from '../lib/ui-helpers'
+import { renderMethodBadge, renderPaymentMethodsStrip } from '../lib/payment-methods'
 
 const officer = new Hono<AppEnv>()
 
@@ -470,18 +471,19 @@ officer.get('/payments', async (c) => {
   if (!roleCtx?.permissions.can_view_finance) return c.redirect('/app/officer')
 
   const { results } = await c.env.DB.prepare(
-    `SELECT pr.id, pr.title, pr.amount_yen, pr.status, u.display_name
+    `SELECT pr.id, pr.title, pr.amount_yen, pr.status, u.display_name, pr.payment_method
      FROM payment_requests pr JOIN users u ON u.id = pr.user_id
      WHERE pr.organization_id = ? ORDER BY pr.status, pr.created_at DESC`,
   )
     .bind(POC_ORG_ID)
-    .all<{ id: string; title: string; amount_yen: number; status: string; display_name: string }>()
+    .all<{ id: string; title: string; amount_yen: number; status: string; display_name: string; payment_method: string | null }>()
 
   const unpaid = (results ?? []).filter((r) => r.status === 'pending').length
 
   const body = `
     ${header('集金管理', `未払い ${unpaid} 件`)}
     <main>
+      ${renderPaymentMethodsStrip()}
       <div class="card">
         <h2>一括請求（デモ）</h2>
         <form method="post" action="/app/officer/payments/bulk">
@@ -494,7 +496,7 @@ officer.get('/payments', async (c) => {
       ${(results ?? [])
         .map(
           (r) => `<div class="card"><span class="badge ${r.status === 'pending' ? 'unread' : ''}">${esc(r.status)}</span>
-        <h2>${esc(r.title)}</h2><p>${esc(r.display_name)} — ¥${r.amount_yen.toLocaleString()}</p></div>`,
+        <h2>${esc(r.title)}</h2><p>${esc(r.display_name)} — ¥${r.amount_yen.toLocaleString()} ${r.payment_method ? renderMethodBadge(r.payment_method) : ''}</p></div>`,
         )
         .join('')}
       <a class="btn btn-secondary" href="/app/officer">← 戻る</a>
@@ -532,19 +534,19 @@ officer.get('/ledger', async (c) => {
   if (!roleCtx?.permissions.can_view_finance) return c.redirect('/app/officer')
 
   const { results } = await c.env.DB.prepare(
-    `SELECT le.amount_yen, le.category, le.payment_provider_ref, le.created_at, u.display_name
+    `SELECT le.amount_yen, le.category, le.payment_provider_ref, le.payment_method, le.created_at, u.display_name
      FROM ledger_entries le LEFT JOIN users u ON u.id = le.related_user_id
      WHERE le.organization_id = ? AND le.entry_type = 'income' ORDER BY le.created_at DESC`,
   )
     .bind(POC_ORG_ID)
-    .all<{ amount_yen: number; category: string; payment_provider_ref: string; created_at: string; display_name: string }>()
+    .all<{ amount_yen: number; category: string; payment_provider_ref: string; payment_method: string; created_at: string; display_name: string }>()
 
   const body = `
     ${header('入金履歴', 'Organization 受取 — ダミー決済分')}
     <main>
       ${(results ?? [])
         .map(
-          (e) => `<div class="card"><p><strong>¥${e.amount_yen.toLocaleString()}</strong> ${esc(e.category)}</p>
+          (e) => `<div class="card"><p><strong>¥${e.amount_yen.toLocaleString()}</strong> ${esc(e.category)} ${renderMethodBadge(e.payment_method)}</p>
         <p class="meta">${esc(e.display_name ?? '')} · ${esc(e.payment_provider_ref)} · ${esc(e.created_at)}</p></div>`,
         )
         .join('') || '<div class="empty">入金履歴なし</div>'}

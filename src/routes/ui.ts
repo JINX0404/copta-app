@@ -9,6 +9,15 @@ import { newId } from '../lib/id'
 import { DEFAULT_PARENT_PERMISSION, PARENT_ROLE_NAME } from '../db/schema'
 import { currentSchoolYear } from '../lib/school-year'
 import officerUi from './ui-officer'
+import {
+  renderPaymentMethodsStrip,
+  renderPaymentMethodPicker,
+  renderMethodBadge,
+  providerRefForMethod,
+  getPaymentMethod,
+  type PaymentMethodId,
+} from '../lib/payment-methods'
+import { renderTodoList, renderFeedItem } from '../lib/ui-components'
 
 const ui = new Hono<AppEnv>()
 
@@ -30,7 +39,8 @@ ui.get('/app', async (c) => {
   const body = `
     <div class="login-hero"><h1>COPTA</h1><p>PTA運営OS — 全機能デモ</p></div>
     <main>
-      ${dbError ? `<div class="alert">DB未セットアップ: <code>npm run db:setup:local:full</code></div>` : `<div class="alert">⚠️ POCデモ — 決済はダミーです</div>`}
+      ${renderPaymentMethodsStrip()}
+      ${dbError ? `<div class="alert">DB未セットアップ: <code>npm run db:setup:local:full</code></div>` : `<div class="alert">⚠️ POCデモ — 決済はシミュレーションです（実際の引き落としなし）</div>`}
       ${
         poc
           ? `<div class="card"><h2>デモログイン</h2>
@@ -121,21 +131,74 @@ ui.get('/app/home', async (c) => {
     .bind(user.userId)
     .first<{ cnt: number }>()
 
+  const unreadAnn = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS cnt FROM announcements a
+     WHERE a.organization_id = ? AND a.approval_status = 'published'
+       AND a.id NOT IN (SELECT announcement_id FROM announcement_reads WHERE user_id = ?)`,
+  )
+    .bind(POC_ORG_ID, user.userId)
+    .first<{ cnt: number }>()
+
+  const pendingSurvey = await c.env.DB.prepare(
+    `SELECT COUNT(*) AS cnt FROM surveys s
+     WHERE s.organization_id = ?
+       AND s.id NOT IN (SELECT survey_id FROM survey_responses WHERE user_id = ?)`,
+  )
+    .bind(POC_ORG_ID, user.userId)
+    .first<{ cnt: number }>()
+
+  const recentAnn = await c.env.DB.prepare(
+    `SELECT id, title, published_at FROM announcements
+     WHERE organization_id = ? AND approval_status = 'published'
+     ORDER BY published_at DESC LIMIT 3`,
+  )
+    .bind(POC_ORG_ID)
+    .all<{ id: string; title: string; published_at: string }>()
+
+  const upcomingVol = await c.env.DB.prepare(
+    `SELECT id, title, event_datetime FROM volunteer_calls
+     WHERE organization_id = ? ORDER BY event_datetime LIMIT 2`,
+  )
+    .bind(POC_ORG_ID)
+    .all<{ id: string; title: string; event_datetime: string }>()
+
+  const todos: Array<{ label: string; href: string; urgent?: boolean }> = []
+  if ((unpaid?.cnt ?? 0) > 0)
+    todos.push({ label: `💰 会費等 ${unpaid?.cnt} 件のお支払い`, href: '/app/payments', urgent: true })
+  if ((unreadAnn?.cnt ?? 0) > 0)
+    todos.push({ label: `📢 未読のお知らせ ${unreadAnn?.cnt} 件`, href: '/app/announcements', urgent: true })
+  if ((pendingSurvey?.cnt ?? 0) > 0)
+    todos.push({ label: `📋 未回答のアンケート ${pendingSurvey?.cnt} 件`, href: '/app/surveys' })
+
   const registered = c.req.query('registered') === '1'
+  const paid = c.req.query('paid') === '1'
+
+  const feed = [
+    ...(recentAnn.results ?? []).map((a) =>
+      renderFeedItem('📢', a.title, a.published_at ?? '', `/app/announcements/${a.id}`),
+    ),
+    ...(upcomingVol.results ?? []).map((v) =>
+      renderFeedItem('🤝', v.title, v.event_datetime ?? '日程未定', '/app/volunteer'),
+    ),
+  ].join('')
 
   const body = `
     ${header(user.display_name, `さくら小学校PTA · ${roleCtx?.roleName ?? '保護者'}`)}
     <main>
+      ${paid ? `<div class="alert">✅ お支払いが完了しました（デモ）</div>` : ''}
       ${registered ? `<div class="alert">✅ 子どもIDの登録が完了しました</div>` : ''}
       ${(children.results ?? []).length ? `<div class="card"><p>お子さま: <strong>${(children.results ?? []).map((ch) => `${ch.grade_label}${ch.class_name}`).join(' / ')}</strong></p></div>` : ''}
-      ${(unpaid?.cnt ?? 0) > 0 ? `<div class="card"><span class="badge unread">要対応</span> <a href="/app/payments">未払い ${unpaid?.cnt} 件 →</a></div>` : ''}
-      ${isOfficer ? `<a class="btn btn-accent" href="/app/officer">⚙️ 役員ダッシュボード</a>` : ''}
-      <div class="card"><h2>メニュー</h2>
-        <a class="btn btn-secondary" href="/app/announcements">📢 お知らせ</a>
-        <a class="btn btn-secondary" href="/app/surveys">📋 アンケート</a>
-        <a class="btn btn-secondary" href="/app/payments">💰 集金</a>
-        <a class="btn btn-secondary" href="/app/volunteer">🤝 ボランティア</a>
+      ${renderTodoList(todos)}
+      <div class="feature-grid">
+        <a class="feature-tile" href="/app/announcements"><span>📢</span><strong>お知らせ</strong></a>
+        <a class="feature-tile" href="/app/surveys"><span>📋</span><strong>アンケート</strong></a>
+        <a class="feature-tile" href="/app/payments"><span>💰</span><strong>集金</strong></a>
+        <a class="feature-tile" href="/app/volunteer"><span>🤝</span><strong>ボランティア</strong></a>
       </div>
+      ${feed ? `<div class="card"><h2>最近の更新</h2>${feed}</div>` : ''}
+      ${renderPaymentMethodsStrip(true)}
+      ${isOfficer ? `<a class="btn btn-accent" href="/app/officer">⚙️ 役員ダッシュボード</a>` : ''}
+      <a class="btn btn-secondary" href="/app/receipts">🧾 領収書一覧</a>
       <a class="btn btn-secondary" href="/app/logout">ログアウト</a>
     </main>`
   return page(c, 'ホーム', body, 'home', !!isOfficer)
@@ -279,60 +342,229 @@ ui.post('/app/surveys/:id/respond', async (c) => {
   return c.redirect('/app/surveys')
 })
 
-/** 集金（ダミー決済） */
+/** 集金 */
 ui.get('/app/payments', async (c) => {
   const user = await requireUiUser(c)
   if (user instanceof Response) return user
   const roleCtx = await getRole(c, user.userId)
 
   const payments = await c.env.DB.prepare(
-    `SELECT id, title, amount_yen, status, category, due_at FROM payment_requests
-     WHERE user_id = ? AND organization_id = ? ORDER BY status, created_at DESC`,
+    `SELECT id, title, amount_yen, status, category, due_at, payment_method, paid_at
+     FROM payment_requests WHERE user_id = ? AND organization_id = ?
+     ORDER BY status ASC, created_at DESC`,
   )
     .bind(user.userId, POC_ORG_ID)
-    .all<{ id: string; title: string; amount_yen: number; status: string; category: string; due_at: string | null }>()
+    .all<{
+      id: string
+      title: string
+      amount_yen: number
+      status: string
+      category: string
+      due_at: string | null
+      payment_method: string | null
+      paid_at: string | null
+    }>()
+
+  const pendingTotal = (payments.results ?? [])
+    .filter((p) => p.status === 'pending')
+    .reduce((s, p) => s + p.amount_yen, 0)
 
   const cards = (payments.results ?? [])
-    .map(
-      (p) => `<div class="card">
-      <span class="badge ${p.status === 'pending' ? 'unread' : ''}">${esc(p.status === 'paid' ? '支払済' : '未払い')}</span>
-      <h2>${esc(p.title)}</h2>
-      <p><strong>¥${p.amount_yen.toLocaleString()}</strong>（${esc(p.category)}）</p>
-      ${p.status === 'pending' ? `<form method="post" action="/app/payments/${p.id}/pay"><button class="btn btn-primary" type="submit">💳 ダミー決済で支払う</button></form>` : `<p class="meta">デモ決済完了</p>`}
-    </div>`,
-    )
+    .map((p) => {
+      let actions = ''
+      if (p.status === 'pending') {
+        actions = `<a class="btn btn-primary" href="/app/payments/${p.id}/checkout">支払う</a>`
+      } else {
+        actions = `<p class="meta">${renderMethodBadge(p.payment_method)} · ${esc(p.paid_at ?? '')}</p>
+          <a class="btn btn-sm btn-secondary" href="/app/payments/${p.id}/receipt">🧾 領収書</a>`
+      }
+      return `<div class="card">
+        <span class="badge ${p.status === 'pending' ? 'unread' : ''}">${p.status === 'paid' ? '支払済' : '未払い'}</span>
+        <h2>${esc(p.title)}</h2>
+        <p><strong>¥${p.amount_yen.toLocaleString()}</strong>（${esc(p.category)}）</p>
+        ${p.due_at ? `<p class="meta">支払期限: ${esc(p.due_at.slice(0, 10))}</p>` : ''}
+        ${actions}
+      </div>`
+    })
     .join('')
 
-  const body = `${header('集金', 'デモ決済 — 実際の引き落としはありません')}<main>
-    ${cards || '<div class="empty">請求はありません</div>'}
-    <p class="meta">※受取人はPTA団体（Organization）固定。個人への送金経路はありません。</p>
-    ${roleCtx?.permissions.can_view_finance ? `<a class="btn btn-secondary" href="/app/officer/payments">📋 請求管理（役員）</a>` : ''}
-  </main>`
+  const body = `${header('集金', pendingTotal > 0 ? `未払い合計 ¥${pendingTotal.toLocaleString()}` : 'すべて支払済')}
+    <main>
+      ${renderPaymentMethodsStrip()}
+      ${cards || '<div class="empty">請求はありません</div>'}
+      <a class="btn btn-secondary" href="/app/receipts">🧾 領収書一覧</a>
+      ${roleCtx?.permissions.can_view_finance ? `<a class="btn btn-secondary" href="/app/officer/payments">📋 請求管理（役員）</a>` : ''}
+    </main>`
   return page(c, '集金', body, 'pay', roleCtx?.permissions.can_publish === true)
+})
+
+ui.get('/app/payments/:id/checkout', async (c) => {
+  const user = await requireUiUser(c)
+  if (user instanceof Response) return user
+  const id = c.req.param('id')!
+
+  const req = await c.env.DB.prepare(
+    `SELECT title, amount_yen, status FROM payment_requests WHERE id = ? AND user_id = ?`,
+  )
+    .bind(id, user.userId)
+    .first<{ title: string; amount_yen: number; status: string }>()
+
+  if (!req) return c.text('Not found', 404)
+  if (req.status === 'paid') return c.redirect(`/app/payments/${id}/receipt`)
+
+  const roleCtx = await getRole(c, user.userId)
+  const body = `${header('お支払い', esc(req.title))}
+    <main>
+      ${renderPaymentMethodPicker(`/app/payments/${id}/pay`, req.amount_yen)}
+      <a class="btn btn-secondary" href="/app/payments">← 戻る</a>
+    </main>`
+  return page(c, 'お支払い', body, 'pay', roleCtx?.permissions.can_publish === true)
 })
 
 ui.post('/app/payments/:id/pay', async (c) => {
   const user = await requireUiUser(c)
   if (user instanceof Response) return user
   const id = c.req.param('id')!
+  const form = await c.req.parseBody()
+  const methodId = String(form.payment_method ?? '') as PaymentMethodId
+
+  if (!getPaymentMethod(methodId)) return c.redirect(`/app/payments/${id}/checkout`)
+
   const req = await c.env.DB.prepare(
-    `SELECT amount_yen, category, status FROM payment_requests WHERE id = ? AND user_id = ?`,
+    `SELECT amount_yen, category, status, title FROM payment_requests WHERE id = ? AND user_id = ?`,
   )
     .bind(id, user.userId)
-    .first<{ amount_yen: number; category: string; status: string }>()
+    .first<{ amount_yen: number; category: string; status: string; title: string }>()
+
   if (!req || req.status === 'paid') return c.redirect('/app/payments')
 
-  const ref = `DEMO-${newId().slice(0, 8)}`
-  await c.env.DB.prepare(`UPDATE payment_requests SET status = 'paid', payment_provider_ref = ? WHERE id = ?`)
-    .bind(ref, id)
-    .run()
+  const ref = providerRefForMethod(methodId)
+  const now = new Date().toISOString()
+
   await c.env.DB.prepare(
-    `INSERT INTO ledger_entries (id, organization_id, entry_type, category, amount_yen, related_user_id, payment_provider_ref)
-     VALUES (?, ?, 'income', ?, ?, ?, ?)`,
+    `UPDATE payment_requests SET status = 'paid', payment_provider_ref = ?, payment_method = ?, paid_at = ? WHERE id = ?`,
   )
-    .bind(newId(), POC_ORG_ID, req.category, req.amount_yen, user.userId, ref)
+    .bind(ref, methodId, now, id)
     .run()
-  return c.redirect('/app/payments?paid=1')
+
+  await c.env.DB.prepare(
+    `INSERT INTO ledger_entries (id, organization_id, entry_type, category, amount_yen, related_user_id, payment_provider_ref, payment_method)
+     VALUES (?, ?, 'income', ?, ?, ?, ?, ?)`,
+  )
+    .bind(newId(), POC_ORG_ID, req.category, req.amount_yen, user.userId, ref, methodId)
+    .run()
+
+  return c.redirect(`/app/payments/${id}/complete?method=${methodId}`)
+})
+
+ui.get('/app/payments/:id/complete', async (c) => {
+  const user = await requireUiUser(c)
+  if (user instanceof Response) return user
+  const id = c.req.param('id')!
+  const methodId = c.req.query('method') ?? ''
+
+  const req = await c.env.DB.prepare(
+    `SELECT title, amount_yen, payment_method, payment_provider_ref FROM payment_requests WHERE id = ? AND user_id = ?`,
+  )
+    .bind(id, user.userId)
+    .first<{ title: string; amount_yen: number; payment_method: string; payment_provider_ref: string }>()
+
+  if (!req) return c.text('Not found', 404)
+
+  const roleCtx = await getRole(c, user.userId)
+  const body = `${header('お支払い完了', '')}
+    <main>
+      <div class="pay-success">
+        <div class="pay-success-icon">✅</div>
+        <h2>お支払いが完了しました</h2>
+        <p>${renderMethodBadge(methodId || req.payment_method)}</p>
+        <p class="meta">取引ID: ${esc(req.payment_provider_ref)}</p>
+      </div>
+      <div class="receipt-box">
+        <div class="receipt-row"><span>${esc(req.title)}</span><span>¥${req.amount_yen.toLocaleString()}</span></div>
+        <div class="receipt-row"><span>受取人</span><span>さくら小学校PTA</span></div>
+      </div>
+      <a class="btn btn-primary" href="/app/payments/${id}/receipt">🧾 領収書を表示</a>
+      <a class="btn btn-secondary" href="/app/home?paid=1">ホームへ</a>
+    </main>`
+  return page(c, '完了', body, 'pay', roleCtx?.permissions.can_publish === true)
+})
+
+ui.get('/app/payments/:id/receipt', async (c) => {
+  const user = await requireUiUser(c)
+  if (user instanceof Response) return user
+  const id = c.req.param('id')!
+
+  const req = await c.env.DB.prepare(
+    `SELECT pr.title, pr.amount_yen, pr.category, pr.payment_method, pr.payment_provider_ref, pr.paid_at,
+            u.display_name, o.name AS org_name, o.school_name
+     FROM payment_requests pr
+     JOIN users u ON u.id = pr.user_id
+     JOIN organizations o ON o.id = pr.organization_id
+     WHERE pr.id = ? AND pr.user_id = ? AND pr.status = 'paid'`,
+  )
+    .bind(id, user.userId)
+    .first<{
+      title: string
+      amount_yen: number
+      category: string
+      payment_method: string
+      payment_provider_ref: string
+      paid_at: string
+      display_name: string
+      org_name: string
+      school_name: string
+    }>()
+
+  if (!req) return c.redirect('/app/payments')
+
+  const roleCtx = await getRole(c, user.userId)
+  const method = getPaymentMethod(req.payment_method)
+  const body = `${header('領収書', req.school_name ?? req.org_name)}
+    <main>
+      <div class="receipt-box">
+        <p style="text-align:center;font-weight:700;margin:0 0 16px">領 収 書</p>
+        <div class="receipt-row"><span>宛名</span><span>${esc(req.display_name)} 様</span></div>
+        <div class="receipt-row"><span>但し書き</span><span>${esc(req.title)}（${esc(req.category)}）</span></div>
+        <div class="receipt-row"><span>金額</span><span>¥${req.amount_yen.toLocaleString()}-</span></div>
+        <div class="receipt-row"><span>決済方法</span><span>${method?.label ?? '—'}</span></div>
+        <div class="receipt-row"><span>取引ID</span><span style="font-size:0.75rem">${esc(req.payment_provider_ref)}</span></div>
+        <div class="receipt-row"><span>支払日</span><span>${esc(req.paid_at?.slice(0, 10) ?? '')}</span></div>
+        <div class="receipt-row"><span>受取人</span><span>${esc(req.org_name)}</span></div>
+      </div>
+      <p class="meta" style="text-align:center">上記正に領収いたしました（電子領収書・POCデモ）</p>
+      <a class="btn btn-secondary" href="/app/payments">← 集金一覧</a>
+    </main>`
+  return page(c, '領収書', body, 'pay', roleCtx?.permissions.can_publish === true)
+})
+
+ui.get('/app/receipts', async (c) => {
+  const user = await requireUiUser(c)
+  if (user instanceof Response) return user
+  const roleCtx = await getRole(c, user.userId)
+
+  const paid = await c.env.DB.prepare(
+    `SELECT id, title, amount_yen, payment_method, paid_at FROM payment_requests
+     WHERE user_id = ? AND status = 'paid' ORDER BY paid_at DESC`,
+  )
+    .bind(user.userId)
+    .all<{ id: string; title: string; amount_yen: number; payment_method: string; paid_at: string }>()
+
+  const list = (paid.results ?? [])
+    .map(
+      (p) => `<a class="feed-item" href="/app/payments/${p.id}/receipt">
+        <span class="feed-icon">🧾</span>
+        <div><div class="feed-title">${esc(p.title)} — ¥${p.amount_yen.toLocaleString()}</div>
+        <div class="meta">${renderMethodBadge(p.payment_method)} · ${esc(p.paid_at?.slice(0, 10) ?? '')}</div></div>
+      </a>`,
+    )
+    .join('')
+
+  const body = `${header('領収書', '電子領収書一覧')}
+    <main>${list || '<div class="empty">領収書はありません</div>'}
+      <a class="btn btn-secondary" href="/app/home">← ホーム</a>
+    </main>`
+  return page(c, '領収書', body, 'home', roleCtx?.permissions.can_publish === true)
 })
 
 /** ボランティア */
