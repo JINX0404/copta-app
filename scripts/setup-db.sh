@@ -13,6 +13,7 @@ run_sql() {
 run_sql ./migrations/0001_init.sql || true
 run_sql ./migrations/0002_auth_sessions.sql || true
 run_sql ./migrations/0003_officer_chat.sql || true
+run_sql ./migrations/0004_payment_requests.sql || true
 run_sql ./migrations/seed_poc.sql
 
 SY=$(node --input-type=module -e "

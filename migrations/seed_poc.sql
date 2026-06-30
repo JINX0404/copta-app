@@ -104,3 +104,12 @@ INSERT OR REPLACE INTO chat_messages (id, channel_id, sender_role_id, body)
 VALUES
   ('msg-demo-001', 'chat-demo-001', 'role-koho', '来年度の広報計画を来週の定例で共有します。'),
   ('msg-demo-002', 'chat-demo-001', 'role-president', '了解です。会場予約の状況も併せてお願いします。');
+
+-- ダミー請求
+INSERT OR REPLACE INTO payment_requests (id, organization_id, user_id, child_id, title, amount_yen, category, status, created_by_role_id, due_at)
+VALUES
+  ('pay-demo-001', 'org-demo-001', 'user-demo-parent', 'child-demo-001', 'PTA会費（2026年度）', 5000, '会費', 'pending', 'role-president', datetime('now', '+30 days')),
+  ('pay-demo-002', 'org-demo-001', 'user-demo-president', 'child-demo-001', 'PTA会費（2026年度）', 5000, '会費', 'paid', 'role-president', datetime('now', '+30 days'));
+
+INSERT OR IGNORE INTO ledger_entries (id, organization_id, entry_type, category, amount_yen, related_user_id, payment_provider_ref)
+VALUES ('ledger-demo-001', 'org-demo-001', 'income', '会費', 5000, 'user-demo-president', 'DEMO-SEED-001');

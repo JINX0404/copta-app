@@ -7,6 +7,7 @@ import surveys from './routes/surveys'
 import handover from './routes/handover'
 import chat from './routes/chat'
 import volunteer from './routes/volunteer'
+import ledger from './routes/ledger'
 import ui from './routes/ui'
 
 const app = new Hono<AppEnv>()
@@ -29,5 +30,6 @@ app.route('/org/:orgId/surveys', surveys)
 app.route('/org/:orgId/handover', handover)
 app.route('/org/:orgId/chat', chat)
 app.route('/org/:orgId/volunteer', volunteer)
+app.route('/org/:orgId/ledger', ledger)
 
 export default app

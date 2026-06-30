@@ -204,7 +204,13 @@ scoped.get('/dashboard', async (c) => {
     return c.json({ error: 'insufficient_permissions' }, 403)
   }
 
-  const unpaidCount = 0
+  const unpaidRow = await c.env.DB
+    .prepare(
+      `SELECT COUNT(DISTINCT user_id) AS cnt FROM payment_requests
+       WHERE organization_id = ? AND status = 'pending'`,
+    )
+    .bind(orgId)
+    .first<{ cnt: number }>()
 
   const unreadRow = await c.env.DB.prepare(
     `SELECT COUNT(DISTINCT om.user_id) AS cnt
@@ -251,7 +257,7 @@ scoped.get('/dashboard', async (c) => {
       : Math.round(((surveyRow?.total_responses ?? 0) / (surveyTotal * memberCount)) * 100)
 
   return c.json({
-    unpaid_count: unpaidCount,
+    unpaid_count: unpaidRow?.cnt ?? 0,
     unread_count: unreadRow?.cnt ?? 0,
     events_this_week: eventsRow?.cnt ?? 0,
     survey_response_rate_percent: responseRate,

@@ -270,14 +270,18 @@ auth.get('/demo-login/:persona', async (c) => {
     return c.text('Unknown persona', 400)
   }
 
-  const user = await c.env.DB.prepare(`SELECT id FROM users WHERE id = ?`).bind(userId).first()
-  if (!user) {
-    return c.text('Demo user not found. Run db:seed:poc first.', 404)
-  }
+  try {
+    const user = await c.env.DB.prepare(`SELECT id FROM users WHERE id = ?`).bind(userId).first()
+    if (!user) {
+      return c.redirect('/app?error=db')
+    }
 
-  const sessionId = await createSessionForUser(c.env.DB, userId)
-  setSessionCookie(c, sessionId)
-  return c.redirect('/app/home')
+    const sessionId = await createSessionForUser(c.env.DB, userId)
+    setSessionCookie(c, sessionId)
+    return c.redirect('/app/home')
+  } catch {
+    return c.redirect('/app?error=db')
+  }
 })
 
 /** 一般保護者ロールがなければ作成し、当年度のアサインを付与 */
