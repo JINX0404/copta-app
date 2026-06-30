@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
-import { serveStatic } from 'hono/cloudflare-workers'
 import type { AppEnv } from '../types/env'
 import { esc, layout } from '../lib/html'
+import { POC_CSS } from '../lib/poc-css'
 import { resolveSessionUser, POC_ORG_ID } from '../lib/session'
 import { resolveActiveRole } from '../middleware/role-guard'
 import { parseSegment, segmentMatchesUser } from '../lib/segment'
@@ -10,7 +10,10 @@ import { clearSessionCookie } from '../middleware/auth'
 
 const ui = new Hono<AppEnv>()
 
-ui.get('/assets/*', serveStatic({ root: './public' }))
+ui.get('/assets/poc.css', (c) => {
+  c.header('Cache-Control', 'public, max-age=86400')
+  return c.body(POC_CSS, 200, { 'Content-Type': 'text/css; charset=utf-8' })
+})
 
 function nav(active: string, isOfficer: boolean): string {
   const items = [
